@@ -142,6 +142,13 @@
   }
   .headerbtn:hover { border-color: var(--green); }
   .coverage-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+  .nameinput {
+    display: block; width: 100%; background: transparent; border: none; border-bottom: 1px solid var(--line);
+    font-family: 'Oswald', sans-serif; font-weight: 600; letter-spacing: 0.02em; font-size: 28px;
+    color: var(--paper); padding: 2px 0 10px; margin: 4px 0 24px;
+  }
+  .nameinput::placeholder { color: var(--muted); font-weight: 500; }
+  .nameinput:focus { outline: none; border-color: var(--amber); }
 </style>
 </head>
 <body>
@@ -218,7 +225,7 @@
     Trip log
   </button>
   <div class="eyebrow" id="detailDate"></div>
-  <h1 class="display">DRIVE LOG</h1>
+  <input id="detailNameInput" class="nameinput" placeholder="Name this drive…" maxlength="60" />
   <div class="mappanel" id="detailMapPanel">
     <div id="detailMap" style="width:100%;height:100%"></div>
   </div>
@@ -262,8 +269,8 @@
 
 <script>
 // ---------- helpers ----------
-const APP_VERSION = 'v1.4.0';
-const BUILD_TIME = '2026-07-20 20:45';
+const APP_VERSION = 'v1.5.0';
+const BUILD_TIME = '2026-07-20 21:15';
 document.getElementById('versionTag').textContent = `DRIVE TRACKER ${APP_VERSION} · built ${BUILD_TIME}`;
 
 const haversine = (a, b) => {
@@ -527,7 +534,7 @@ function renderLogList() {
   }
   el.innerHTML = state.drives.map(d => `
     <button class="logrow" data-id="${esc(d.id)}">
-      <div><div class="d">${esc(fmtDate(d.startedAt))}</div><div class="m">${fmtDist(d.distance)} · ${fmtDur(d.duration)}${(d.pins && d.pins.length) ? ' · ' + d.pins.length + ' pin' + (d.pins.length>1?'s':'') : ''}</div></div>
+      <div><div class="d">${d.name ? esc(d.name) : esc(fmtDate(d.startedAt))}</div><div class="m">${d.name ? esc(fmtDate(d.startedAt)) + ' · ' : ''}${fmtDist(d.distance)} · ${fmtDur(d.duration)}${(d.pins && d.pins.length) ? ' · ' + d.pins.length + ' pin' + (d.pins.length>1?'s':'') : ''}</div></div>
       <span style="color:var(--green)"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg></span>
     </button>`).join('');
   el.querySelectorAll('.logrow').forEach(row => {
@@ -573,12 +580,16 @@ document.getElementById('pinModalOverlay').onclick = (e) => { if (e.target.id ==
 document.getElementById('pinNoteInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmPin(); });
 
 // ---------- view switching ----------
+let currentDetailId = null;
+
 function openDetail(id) {
   const d = state.drives.find(x => x.id === id);
   if (!d) return;
+  currentDetailId = id;
   document.getElementById('mainView').classList.add('hidden');
   document.getElementById('detailView').classList.remove('hidden');
   document.getElementById('detailDate').textContent = fmtDate(d.startedAt).toUpperCase();
+  document.getElementById('detailNameInput').value = d.name || '';
   const avg = (d.distance/1000) / ((d.duration/3600) || 1);
   document.getElementById('detailDistance').textContent = fmtDist(d.distance);
   document.getElementById('detailDuration').textContent = fmtDur(d.duration);
@@ -611,6 +622,22 @@ document.getElementById('backBtn').onclick = () => {
   document.getElementById('mainView').classList.remove('hidden');
   setTimeout(() => mainMap.invalidateSize(), 50);
 };
+
+async function saveDriveName(id, name) {
+  const d = state.drives.find(x => x.id === id);
+  if (!d) return;
+  const trimmed = name.trim();
+  if ((d.name || '') === trimmed) return;
+  d.name = trimmed;
+  try { await api.save(d); } catch (e) { showError("Couldn't save the name — check your connection."); }
+  renderLogList();
+}
+document.getElementById('detailNameInput').addEventListener('blur', (e) => {
+  if (currentDetailId) saveDriveName(currentDetailId, e.target.value);
+});
+document.getElementById('detailNameInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') e.target.blur();
+});
 
 // ---------- tracking logic ----------
 function startTracking() {
