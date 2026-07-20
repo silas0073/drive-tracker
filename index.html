@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Drive Tracker</title>
+<meta name="description" content="Live GPS trip computer — track and log your drives." />
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#14151A" />
+<link rel="apple-touch-icon" href="/icon-180.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Drive Tracker" />
+<link rel="icon" href="/icon-192.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+  :root {
+    --asphalt: #14151A;
+    --panel: #191a20;
+    --line: #24262f;
+    --paper: #EDEAE2;
+    --muted: #5a5d68;
+    --amber: #F2A73B;
+    --amber-soft: #f5b658;
+    --green: #3D5C46;
+    --err-bg: #2a1f1a;
+    --err-line: #4a3226;
+    --err-text: #e0a688;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--asphalt); }
+  body {
+    font-family: 'Inter', sans-serif;
+    color: var(--paper);
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .display { font-family: 'Oswald', sans-serif; font-weight: 600; letter-spacing: 0.02em; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 24px 20px; }
+  .rowbtw { display: flex; align-items: center; justify-content: space-between; }
+  .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.15em; color: var(--muted); }
+  h1 { font-size: 30px; margin: 4px 0 24px; }
+  .status { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .errbox {
+    display: flex; gap: 8px; align-items: flex-start;
+    background: var(--err-bg); border: 1px solid var(--err-line); color: var(--err-text);
+    font-size: 14px; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px;
+  }
+  .stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 8px; text-align: center;
+  }
+  .stat .lbl { display: flex; align-items: center; justify-content: center; gap: 4px; color: var(--muted); margin-bottom: 4px; }
+  .stat .lbl span { font-size: 9px; letter-spacing: 0.15em; }
+  .stat .val { font-size: 20px; }
+  .stat .unit { font-size: 11px; color: var(--muted); margin-left: 4px; }
+  .active .val { color: var(--amber); }
+  .tracepanel {
+    height: 256px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--panel); margin-bottom: 16px; overflow: hidden; position: relative;
+  }
+  .livepill {
+    position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px;
+    background: rgba(20,21,26,0.8); border-radius: 999px; padding: 4px 10px;
+  }
+  .livepill span.txt { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.15em; color: var(--amber); }
+  .empty { display:flex; align-items:center; justify-content:center; height:100%; color: var(--muted); font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:0.05em; }
+  button { font-family: inherit; cursor: pointer; }
+  .ctrlbtn {
+    width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+    border-radius: 10px; padding: 16px; margin-bottom: 32px; font-family: 'JetBrains Mono', monospace;
+    font-size: 14px; letter-spacing: 0.15em; border: 1px solid transparent; transition: background .15s;
+  }
+  .ctrlbtn.start { background: var(--amber); color: var(--asphalt); }
+  .ctrlbtn.start:hover { background: var(--amber-soft); }
+  .ctrlbtn.stop { background: var(--err-bg); border-color: var(--err-line); color: var(--err-text); }
+  .logrow { display: flex; align-items: center; justify-content: space-between;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 16px; text-align: left; width: 100%; margin-bottom: 8px; transition: border-color .15s;
+  }
+  .logrow:hover { border-color: var(--green); }
+  .logrow .d { font-size: 14px; }
+  .logrow .m { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .emptylog { color: var(--muted); font-size: 14px; border: 1px dashed var(--line); border-radius: 10px; padding: 24px 16px; text-align: center; }
+  .backbtn { display: flex; align-items: center; gap: 4px; color: var(--muted); background: none; border: none; font-size: 14px; margin-bottom: 24px; padding: 0; }
+  .backbtn:hover { color: var(--paper); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  .block { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .block .lbl { font-family:'JetBrains Mono',monospace; font-size: 9px; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 4px; }
+  .block .val { font-size: 18px; }
+  .delbtn { display: flex; align-items: center; gap: 8px; color: #8a4a3d; background: none; border: none; font-family: 'JetBrains Mono', monospace; font-size: 13px; letter-spacing: 0.05em; padding: 0; }
+  .delbtn:hover { color: #c25f4c; }
+  a, a:visited { color: inherit; }
+  svg.icon { display: block; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ---------- helpers ----------
+const haversine = (a, b) => {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+  const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+};
+const fmtDist = m => m >= 1000 ? (m/1000).toFixed(2) + ' km' : Math.round(m) + ' m';
+const fmtDur = sec => {
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = Math.floor(sec%60);
+  return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+};
+const fmtSpeed = kmh => kmh.toFixed(0);
+const fmtDate = ts => new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) + ' · ' + new Date(ts).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ---------- API (Netlify Blobs via serverless function) ----------
+const api = {
+  async list() {
+    const r = await fetch('/api/drives');
+    if (!r.ok) throw new Error('Failed to load drives');
+    return r.json();
+  },
+  async save(drive) {
+    const r = await fetch('/api/drives', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(drive) });
+    if (!r.ok) throw new Error('Failed to save drive');
+    return r.json();
+  },
+  async remove(id) {
+    const r = await fetch('/api/drives?id=' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!r.ok) throw new Error('Failed to delete drive');
+    return r.json();
+  }
+};
+
+// ---------- state ----------
+const state = {
+  tracking: false,
+  path: [],
+  elapsed: 0,
+  curSpeed: 0,
+  gpsState: 'idle', // idle | acquiring | active | error
+  errorMsg: '',
+  drives: [],
+  viewDrive: null,
+  loadingHistory: true,
+  watchId: null,
+  startTime: null,
+  tickInterval: null,
+};
+
+// ---------- route trace SVG ----------
+function routeTraceSVG(points, live) {
+  if (!points || points.length < 2) {
+    return `<div class="empty">${live ? 'AWAITING SIGNAL…' : 'NO ROUTE DATA'}</div>`;
+  }
+  const lats = points.map(p=>p.lat), lngs = points.map(p=>p.lng);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const padFrac = 0.12;
+  const latRange = Math.max(maxLat-minLat, 0.0002);
+  const lngRange = Math.max(maxLng-minLng, 0.0002);
+  const W=600,H=360,pad=40;
+  const project = p => {
+    const x = pad + ((p.lng - minLng + lngRange*padFrac/2) / (lngRange*(1+padFrac))) * (W-2*pad);
+    const y = H - pad - ((p.lat - minLat + latRange*padFrac/2) / (latRange*(1+padFrac))) * (H-2*pad);
+    return [x,y];
+  };
+  const d = points.map((p,i)=>`${i===0?'M':'L'} ${project(p)[0].toFixed(1)} ${project(p)[1].toFixed(1)}`).join(' ');
+  const ticks = points.filter((_,i)=> i%6===0 && i!==0 && i!==points.length-1);
+  const [sx,sy] = project(points[0]);
+  const [ex,ey] = project(points[points.length-1]);
+  const color = live ? '#F2A73B' : '#3D5C46';
+  const ticksSVG = ticks.map(p=>{ const [x,y]=project(p); return `<circle cx="${x}" cy="${y}" r="1.6" fill="${color}" opacity="0.55"/>`; }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:100%">
+    <defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#24262f" stroke-width="1"/>
+    </pattern></defs>
+    <rect width="${W}" height="${H}" fill="url(#grid)"/>
+    <path d="${d}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${ticksSVG}
+    <circle cx="${sx}" cy="${sy}" r="5" fill="#EDEAE2"/>
+    <circle cx="${sx}" cy="${sy}" r="9" fill="none" stroke="#EDEAE2" stroke-width="1.2" opacity="0.5"/>
+    <circle cx="${ex}" cy="${ey}" r="5" fill="${color}" class="${live?'pulse':''}"/>
+  </svg>`;
+}
+
+// ---------- icons (tiny inline SVGs to avoid extra deps flakiness) ----------
+const ICON = {
+  nav: `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>`,
+  play: `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`,
+  square: `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg>`,
+  clock: `<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`,
+  gauge: `<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15l3.5-3.5"></path><path d="M20.4 12A8.4 8.4 0 1 1 3.6 12a8.4 8.4 0 0 1 16.8 0z"></path></svg>`,
+  pin: `<svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>`,
+  chevron: `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`,
+  alert: `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`,
+  trash: `<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`,
+};
+
+function statusPill() {
+  const map = {
+    idle: {c:'#5a5d68', t:'STANDBY'},
+    acquiring: {c:'#e0c068', t:'ACQUIRING…'},
+    active: {c:'#F2A73B', t:'TRACKING'},
+    error: {c:'#c25f4c', t:'ERROR'},
+  };
+  const s = map[state.gpsState] || map.idle;
+  return `<div class="status"><span class="dot" style="background:${s.c}"></span><span class="mono" style="font-size:10px;letter-spacing:0.15em;color:${s.c}">${s.t}</span></div>`;
+}
+
+// ---------- render ----------
+function render() {
+  const app = document.getElementById('app');
+
+  if (state.viewDrive) {
+    const d = state.viewDrive;
+    const avg = (d.distance/1000) / ((d.duration/3600) || 1);
+    app.innerHTML = `
+      <div class="wrap">
+        <button class="backbtn" id="backBtn">${ICON.chevron} Trip log</button>
+        <div class="eyebrow">${esc(fmtDate(d.startedAt).toUpperCase())}</div>
+        <h1 class="display">DRIVE LOG</h1>
+        <div class="tracepanel">${routeTraceSVG(d.points, false)}</div>
+        <div class="grid2">
+          <div class="block"><div class="lbl">DISTANCE</div><div class="val display">${fmtDist(d.distance)}</div></div>
+          <div class="block"><div class="lbl">DURATION</div><div class="val display">${fmtDur(d.duration)}</div></div>
+          <div class="block"><div class="lbl">AVG SPEED</div><div class="val display">${fmtSpeed(avg)} km/h</div></div>
+          <div class="block"><div class="lbl">POINTS LOGGED</div><div class="val display">${d.points.length}</div></div>
+        </div>
+        <button class="delbtn" id="delBtn">${ICON.trash} DELETE THIS DRIVE</button>
+      </div>`;
+    document.getElementById('backBtn').onclick = () => { state.viewDrive = null; render(); };
+    document.getElementById('delBtn').onclick = () => deleteDrive(d.id);
+    return;
+  }
+
+  const liveDistance = (() => {
+    let dd = 0;
+    for (let i=1;i<state.path.length;i++) dd += haversine(state.path[i-1], state.path[i]);
+    return dd;
+  })();
+
+  app.innerHTML = `
+    <div class="wrap">
+      <div class="rowbtw" style="margin-bottom:4px">
+        <div class="eyebrow">TRIP COMPUTER</div>
+        ${statusPill()}
+      </div>
+      <h1 class="display">DRIVE TRACKER</h1>
+
+      ${state.errorMsg ? `<div class="errbox">${ICON.alert}<span>${esc(state.errorMsg)}</span></div>` : ''}
+
+      <div class="stats3">
+        <div class="stat ${state.tracking?'active':''}"><div class="lbl">${ICON.pin}<span>DISTANCE</span></div><div class="val display">${fmtDist(liveDistance)}</div></div>
+        <div class="stat ${state.tracking?'active':''}"><div class="lbl">${ICON.clock}<span>DURATION</span></div><div class="val display">${fmtDur(state.elapsed)}</div></div>
+        <div class="stat ${state.tracking?'active':''}"><div class="lbl">${ICON.gauge}<span>SPEED</span></div><div class="val display">${fmtSpeed(state.curSpeed)}<span class="unit">km/h</span></div></div>
+      </div>
+
+      <div class="tracepanel">
+        ${routeTraceSVG(state.path, state.tracking)}
+        ${state.tracking ? `<div class="livepill"><span class="dot pulse" style="background:#F2A73B;width:6px;height:6px"></span><span class="txt">LIVE</span></div>` : ''}
+      </div>
+
+      <button class="ctrlbtn ${state.tracking?'stop':'start'}" id="ctrlBtn">
+        ${state.tracking ? ICON.square : ICON.play}
+        ${state.tracking ? 'END &amp; SAVE DRIVE' : 'START TRACKING'}
+      </button>
+
+      <div class="rowbtw" style="margin-bottom:12px">
+        <div class="eyebrow">TRIP LOG</div>
+        <div class="mono" style="font-size:11px;color:var(--muted)">${state.drives.length}</div>
+      </div>
+
+      ${state.loadingHistory ? `<div class="mono" style="color:var(--muted);font-size:14px">Loading…</div>` :
+        state.drives.length === 0 ? `<div class="emptylog">No drives saved yet. Start tracking to log your first route.</div>` :
+        `<div>${state.drives.map(d => `
+          <button class="logrow" data-id="${esc(d.id)}">
+            <div><div class="d">${esc(fmtDate(d.startedAt))}</div><div class="m">${fmtDist(d.distance)} · ${fmtDur(d.duration)}</div></div>
+            <span style="color:var(--green)">${ICON.nav}</span>
+          </button>`).join('')}</div>`}
+    </div>`;
+
+  document.getElementById('ctrlBtn').onclick = () => state.tracking ? stopTracking(true) : startTracking();
+  document.querySelectorAll('.logrow').forEach(el => {
+    el.onclick = () => {
+      const id = el.getAttribute('data-id');
+      state.viewDrive = state.drives.find(d => d.id === id) || null;
+      render();
+    };
+  });
+}
+
+// ---------- tracking logic ----------
+function startTracking() {
+  if (!navigator.geolocation) {
+    state.gpsState = 'error';
+    state.errorMsg = "Geolocation isn't available in this browser.";
+    render();
+    return;
+  }
+  state.errorMsg = '';
+  state.path = [];
+  state.elapsed = 0;
+  state.gpsState = 'acquiring';
+  state.startTime = Date.now();
+
+  state.watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      state.gpsState = 'active';
+      const { latitude, longitude, speed } = pos.coords;
+      state.path = [...state.path, { lat: latitude, lng: longitude, t: pos.timestamp }];
+      if (typeof speed === 'number' && speed !== null && speed >= 0) state.curSpeed = speed * 3.6;
+      render();
+    },
+    (err) => {
+      state.gpsState = 'error';
+      state.errorMsg = err.code === 1
+        ? 'Location permission denied — allow location access to track your drive.'
+        : 'Lost GPS signal. Waiting to reacquire…';
+      render();
+    },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+  );
+
+  state.tickInterval = setInterval(() => {
+    state.elapsed = (Date.now() - state.startTime) / 1000;
+    render();
+  }, 1000);
+
+  state.tracking = true;
+  render();
+}
+
+async function stopTracking(save) {
+  if (state.watchId !== null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(state.watchId);
+    state.watchId = null;
+  }
+  if (state.tickInterval) { clearInterval(state.tickInterval); state.tickInterval = null; }
+  state.tracking = false;
+  state.gpsState = 'idle';
+
+  if (save && state.path.length >= 2) {
+    let dist = 0;
+    for (let i=1;i<state.path.length;i++) dist += haversine(state.path[i-1], state.path[i]);
+    const duration = (Date.now() - state.startTime) / 1000;
+    const drive = {
+      id: String(state.startTime),
+      startedAt: state.startTime,
+      endedAt: Date.now(),
+      distance: dist,
+      duration,
+      points: state.path,
+    };
+    try {
+      await api.save(drive);
+      state.drives = [drive, ...state.drives];
+    } catch (e) {
+      state.errorMsg = "Couldn't save this drive — check your connection and try again.";
+    }
+  }
+  render();
+}
+
+async function deleteDrive(id) {
+  try { await api.remove(id); } catch (e) {}
+  state.drives = state.drives.filter(d => d.id !== id);
+  if (state.viewDrive && state.viewDrive.id === id) state.viewDrive = null;
+  render();
+}
+
+// ---------- init ----------
+async function loadHistory() {
+  try {
+    state.drives = await api.list();
+  } catch (e) {
+    // no history yet / offline
+  } finally {
+    state.loadingHistory = false;
+    render();
+  }
+}
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
+render();
+loadHistory();
+</script>
+</body>
+</html>
