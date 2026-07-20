@@ -258,8 +258,14 @@
   <div class="emptylog" style="font-size:12px">Every past route is drawn in green, overlapping streets get darker. Amber pins mark spots you flagged. Empty patches are streets you haven't covered yet.</div>
 </div>
 
+<div id="versionTag" class="mono" style="text-align:center;color:var(--muted);font-size:10px;letter-spacing:0.1em;padding:16px 0 32px;opacity:0.55"></div>
+
 <script>
 // ---------- helpers ----------
+const APP_VERSION = 'v1.4.0';
+const BUILD_TIME = '2026-07-20 20:45';
+document.getElementById('versionTag').textContent = `DRIVE TRACKER ${APP_VERSION} · built ${BUILD_TIME}`;
+
 const haversine = (a, b) => {
   const R = 6371000;
   const toRad = d => d * Math.PI / 180;

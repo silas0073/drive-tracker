@@ -1,4 +1,4 @@
-const CACHE = "drive-tracker-v4";
+const CACHE = "drive-tracker-v5";
 const SHELL = ["/manifest.json", "/icon-192.png", "/icon-512.png", "/icon-180.png"];
 
 self.addEventListener("install", (e) => {
