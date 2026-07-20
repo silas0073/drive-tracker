@@ -134,6 +134,14 @@
   .pinrow { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
   .pinrow .t { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); min-width: 52px; }
   .pinrow .n { font-size: 14px; }
+  .mappanel.tall { height: 420px; }
+  .headerbtn {
+    display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 999px; padding: 6px 12px; color: var(--paper); font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.1em;
+  }
+  .headerbtn:hover { border-color: var(--green); }
+  .coverage-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
 </style>
 </head>
 <body>
@@ -144,7 +152,13 @@
     <div class="eyebrow">TRIP COMPUTER</div>
     <div class="status" id="statusPill"><span class="dot" style="background:#5a5d68"></span><span class="mono" style="font-size:10px;letter-spacing:0.15em;color:#5a5d68">STANDBY</span></div>
   </div>
-  <h1 class="display">DRIVE TRACKER</h1>
+  <div class="rowbtw" style="margin-bottom:24px">
+    <h1 class="display" style="margin:4px 0 0">DRIVE TRACKER</h1>
+    <button class="headerbtn" id="coverageBtn">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
+      COVERAGE
+    </button>
+  </div>
 
   <div id="errorBox" class="errbox hidden"></div>
 
@@ -223,6 +237,25 @@
     <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
     DELETE THIS DRIVE
   </button>
+</div>
+
+<!-- ===== COVERAGE VIEW ===== -->
+<div id="coverageView" class="wrap hidden">
+  <button class="backbtn" id="coverageBackBtn">
+    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    Trip log
+  </button>
+  <div class="eyebrow">ALL DRIVES, ONE MAP</div>
+  <h1 class="display">COVERAGE MAP</h1>
+  <div class="coverage-stats">
+    <div class="stat"><div class="lbl"><span>DRIVES</span></div><div class="val display" id="covDrives">0</div></div>
+    <div class="stat"><div class="lbl"><span>TOTAL DIST</span></div><div class="val display" id="covDistance">0 m</div></div>
+    <div class="stat"><div class="lbl"><span>PINS</span></div><div class="val display" id="covPins">0</div></div>
+  </div>
+  <div class="mappanel tall" id="coverageMapPanel">
+    <div id="coverageMap" style="width:100%;height:100%"></div>
+  </div>
+  <div class="emptylog" style="font-size:12px">Every past route is drawn in green, overlapping streets get darker. Amber pins mark spots you flagged. Empty patches are streets you haven't covered yet.</div>
 </div>
 
 <script>
@@ -378,6 +411,72 @@ function renderDetailMap(points, pins) {
   });
   detailMap.fitBounds(poly.getBounds(), { padding: [30, 30] });
 }
+
+// ---------- Leaflet map (coverage, all drives) ----------
+let coverageMap = null;
+let coverageLayerGroup = null;
+
+function ensureCoverageMap() {
+  if (coverageMap) return;
+  coverageMap = L.map('coverageMap', { zoomControl: true, attributionControl: true }).setView([-33.8688, 151.2093], 12);
+  L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom: 19 }).addTo(coverageMap);
+  coverageLayerGroup = L.layerGroup().addTo(coverageMap);
+}
+
+function renderCoverageMap() {
+  ensureCoverageMap();
+  coverageLayerGroup.clearLayers();
+
+  const allBoundsPts = [];
+  let totalDist = 0;
+  let totalPins = 0;
+
+  state.drives.forEach(d => {
+    if (!d.points || d.points.length < 2) return;
+    const latlngs = d.points.map(p => [p.lat, p.lng]);
+    L.polyline(latlngs, { color: '#3D5C46', weight: 5, opacity: 0.55, lineCap: 'round', lineJoin: 'round' }).addTo(coverageLayerGroup);
+    allBoundsPts.push(...latlngs);
+    totalDist += d.distance || 0;
+    (d.pins || []).forEach(pin => {
+      totalPins++;
+      const m = L.marker([pin.lat, pin.lng], { icon: pinIcon('#F2A73B') });
+      if (pin.note) m.bindPopup(esc(pin.note));
+      m.addTo(coverageLayerGroup);
+      allBoundsPts.push([pin.lat, pin.lng]);
+    });
+  });
+
+  // include the drive currently in progress, if any, so today's route shows up too
+  if (state.path.length >= 2) {
+    const liveLatlngs = state.path.map(p => [p.lat, p.lng]);
+    L.polyline(liveLatlngs, { color: '#F2A73B', weight: 4, opacity: 0.8, lineCap: 'round', lineJoin: 'round' }).addTo(coverageLayerGroup);
+    allBoundsPts.push(...liveLatlngs);
+  }
+
+  document.getElementById('covDrives').textContent = state.drives.length;
+  document.getElementById('covDistance').textContent = fmtDist(totalDist);
+  document.getElementById('covPins').textContent = totalPins;
+
+  if (allBoundsPts.length > 0) {
+    coverageMap.fitBounds(L.latLngBounds(allBoundsPts), { padding: [30, 30] });
+  }
+}
+
+function openCoverage() {
+  document.getElementById('mainView').classList.add('hidden');
+  document.getElementById('coverageView').classList.remove('hidden');
+  setTimeout(() => {
+    ensureCoverageMap();
+    coverageMap.invalidateSize();
+    renderCoverageMap();
+  }, 50);
+}
+document.getElementById('coverageBtn').onclick = openCoverage;
+document.getElementById('coverageBackBtn').onclick = () => {
+  document.getElementById('coverageView').classList.add('hidden');
+  document.getElementById('mainView').classList.remove('hidden');
+  setTimeout(() => mainMap.invalidateSize(), 50);
+};
 
 // ---------- status / stats ----------
 function setStatus(s) {
