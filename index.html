@@ -104,6 +104,36 @@
   a, a:visited { color: inherit; }
   svg.icon { display: block; }
   .hidden { display: none !important; }
+  .pinbtn {
+    position: absolute; bottom: 12px; right: 12px; z-index: 1000;
+    width: 44px; height: 44px; border-radius: 50%; border: none;
+    background: var(--amber); color: var(--asphalt);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4); transition: transform .1s;
+  }
+  .pinbtn:active { transform: scale(0.92); }
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(20,21,26,0.75); z-index: 2000;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .modal-box {
+    width: 100%; max-width: 480px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 16px 16px 0 0; padding: 20px; padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+  .modal-title { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 12px; }
+  .modal-input {
+    width: 100%; background: var(--asphalt); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--paper); font-family: 'Inter', sans-serif; font-size: 16px; padding: 12px; margin-bottom: 16px;
+  }
+  .modal-input:focus { outline: none; border-color: var(--amber); }
+  .modal-actions { display: flex; gap: 8px; }
+  .modal-btn { flex: 1; border-radius: 8px; padding: 12px; font-family: 'JetBrains Mono', monospace; font-size: 13px; letter-spacing: 0.1em; border: 1px solid transparent; }
+  .modal-btn.cancel { background: transparent; border-color: var(--line); color: var(--muted); }
+  .modal-btn.save { background: var(--amber); color: var(--asphalt); }
+  .pinlist { margin-bottom: 24px; }
+  .pinrow { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+  .pinrow .t { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); min-width: 52px; }
+  .pinrow .n { font-size: 14px; }
 </style>
 </head>
 <body>
@@ -137,6 +167,9 @@
     <div id="map" style="width:100%;height:100%"></div>
     <div class="empty" id="mapEmpty">AWAITING SIGNAL…</div>
     <div class="livepill" id="livePill"><span class="dot pulse" style="background:#F2A73B;width:6px;height:6px"></span><span class="txt">LIVE</span></div>
+    <button class="pinbtn hidden" id="pinBtn" title="Drop a pin">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+    </button>
   </div>
 
   <button class="ctrlbtn start" id="ctrlBtn">
@@ -150,6 +183,18 @@
   </div>
 
   <div id="logList"><div class="mono" style="color:var(--muted);font-size:14px">Loading…</div></div>
+</div>
+
+<!-- ===== PIN MODAL ===== -->
+<div class="modal-overlay hidden" id="pinModalOverlay">
+  <div class="modal-box">
+    <div class="modal-title">DROP PIN</div>
+    <input id="pinNoteInput" class="modal-input" placeholder="What's here? (optional)" maxlength="60" />
+    <div class="modal-actions">
+      <button class="modal-btn cancel" id="pinCancelBtn">Cancel</button>
+      <button class="modal-btn save" id="pinSaveBtn">Save Pin</button>
+    </div>
+  </div>
 </div>
 
 <!-- ===== DETAIL VIEW ===== -->
@@ -169,6 +214,11 @@
     <div class="block"><div class="lbl">AVG SPEED</div><div class="val display" id="detailAvg"></div></div>
     <div class="block"><div class="lbl">POINTS LOGGED</div><div class="val display" id="detailPoints"></div></div>
   </div>
+  <div class="rowbtw" id="detailPinsHeader" style="margin-bottom:12px">
+    <div class="eyebrow">PINS</div>
+    <div class="mono" style="font-size:11px;color:var(--muted)" id="detailPinsCount">0</div>
+  </div>
+  <div class="pinlist" id="detailPinsList"></div>
   <button class="delbtn" id="detailDelBtn">
     <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
     DELETE THIS DRIVE
@@ -216,6 +266,7 @@ const api = {
 const state = {
   tracking: false,
   path: [],
+  pins: [],
   elapsed: 0,
   curSpeed: 0,
   gpsState: 'idle',
@@ -244,10 +295,31 @@ function amberDot(color, size) {
   });
 }
 
+function pinIcon(color) {
+  return L.divIcon({
+    className: '',
+    html: `<svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg"><path d="M13 0C5.8 0 0 5.8 0 13c0 9.7 13 21 13 21s13-11.3 13-21C26 5.8 20.2 0 13 0z" fill="${color}" stroke="#14151A" stroke-width="1.5"/><circle cx="13" cy="13" r="4.5" fill="#14151A"/></svg>`,
+    iconSize: [26, 34],
+    iconAnchor: [13, 34],
+    popupAnchor: [0, -30],
+  });
+}
+
+let mainPinMarkers = [];
+
+function addPinMarkerToMainMap(pin) {
+  const marker = L.marker([pin.lat, pin.lng], { icon: pinIcon('#F2A73B') }).addTo(mainMap);
+  if (pin.note) marker.bindPopup(esc(pin.note));
+  mainPinMarkers.push(marker);
+}
+
 function resetMainMap() {
   if (mainPolyline) { mainMap.removeLayer(mainPolyline); mainPolyline = null; }
   if (mainStartMarker) { mainMap.removeLayer(mainStartMarker); mainStartMarker = null; }
   if (mainLiveMarker) { mainMap.removeLayer(mainLiveMarker); mainLiveMarker = null; }
+  mainPinMarkers.forEach(m => mainMap.removeLayer(m));
+  mainPinMarkers = [];
+  state.pins = [];
 }
 
 function updateMainMap() {
@@ -289,7 +361,7 @@ const detailMap = L.map('detailMap', { zoomControl: true, attributionControl: tr
 L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom: 19 }).addTo(detailMap);
 let detailLayerGroup = L.layerGroup().addTo(detailMap);
 
-function renderDetailMap(points) {
+function renderDetailMap(points, pins) {
   detailLayerGroup.clearLayers();
   if (!points || points.length < 1) return;
   const latlngs = points.map(p => [p.lat, p.lng]);
@@ -299,6 +371,11 @@ function renderDetailMap(points) {
   detailLayerGroup.addLayer(poly);
   detailLayerGroup.addLayer(start);
   detailLayerGroup.addLayer(end);
+  (pins || []).forEach(pin => {
+    const m = L.marker([pin.lat, pin.lng], { icon: pinIcon('#3D5C46') });
+    if (pin.note) m.bindPopup(esc(pin.note));
+    detailLayerGroup.addLayer(m);
+  });
   detailMap.fitBounds(poly.getBounds(), { padding: [30, 30] });
 }
 
@@ -345,7 +422,7 @@ function renderLogList() {
   }
   el.innerHTML = state.drives.map(d => `
     <button class="logrow" data-id="${esc(d.id)}">
-      <div><div class="d">${esc(fmtDate(d.startedAt))}</div><div class="m">${fmtDist(d.distance)} · ${fmtDur(d.duration)}</div></div>
+      <div><div class="d">${esc(fmtDate(d.startedAt))}</div><div class="m">${fmtDist(d.distance)} · ${fmtDur(d.duration)}${(d.pins && d.pins.length) ? ' · ' + d.pins.length + ' pin' + (d.pins.length>1?'s':'') : ''}</div></div>
       <span style="color:var(--green)"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg></span>
     </button>`).join('');
   el.querySelectorAll('.logrow').forEach(row => {
@@ -359,7 +436,36 @@ function updateCtrlBtn() {
   btn.innerHTML = state.tracking
     ? `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg> END &amp; SAVE DRIVE`
     : `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> START TRACKING`;
+  document.getElementById('pinBtn').classList.toggle('hidden', !state.tracking);
 }
+
+// ---------- pin drop ----------
+let pendingPinCoords = null;
+
+function openPinModal() {
+  if (state.path.length === 0) return;
+  pendingPinCoords = state.path[state.path.length - 1];
+  document.getElementById('pinNoteInput').value = '';
+  document.getElementById('pinModalOverlay').classList.remove('hidden');
+  setTimeout(() => document.getElementById('pinNoteInput').focus(), 50);
+}
+function closePinModal() {
+  document.getElementById('pinModalOverlay').classList.add('hidden');
+  pendingPinCoords = null;
+}
+function confirmPin() {
+  if (!pendingPinCoords) { closePinModal(); return; }
+  const note = document.getElementById('pinNoteInput').value.trim();
+  const pin = { id: Date.now() + '-' + Math.random().toString(36).slice(2), lat: pendingPinCoords.lat, lng: pendingPinCoords.lng, t: Date.now(), note };
+  state.pins.push(pin);
+  addPinMarkerToMainMap(pin);
+  closePinModal();
+}
+document.getElementById('pinBtn').onclick = openPinModal;
+document.getElementById('pinCancelBtn').onclick = closePinModal;
+document.getElementById('pinSaveBtn').onclick = confirmPin;
+document.getElementById('pinModalOverlay').onclick = (e) => { if (e.target.id === 'pinModalOverlay') closePinModal(); };
+document.getElementById('pinNoteInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmPin(); });
 
 // ---------- view switching ----------
 function openDetail(id) {
@@ -374,9 +480,24 @@ function openDetail(id) {
   document.getElementById('detailAvg').textContent = fmtSpeed(avg) + ' km/h';
   document.getElementById('detailPoints').textContent = d.points.length;
   document.getElementById('detailDelBtn').onclick = () => deleteDrive(d.id);
+
+  const pins = d.pins || [];
+  document.getElementById('detailPinsCount').textContent = pins.length;
+  const pinsListEl = document.getElementById('detailPinsList');
+  if (pins.length === 0) {
+    pinsListEl.innerHTML = `<div class="emptylog">No pins dropped on this drive.</div>`;
+  } else {
+    pinsListEl.innerHTML = pins.map(p => `
+      <div class="pinrow">
+        <span style="color:var(--green)"><svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg></span>
+        <span class="t">${new Date(p.t).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</span>
+        <span class="n">${p.note ? esc(p.note) : 'Pin'}</span>
+      </div>`).join('');
+  }
+
   setTimeout(() => {
     detailMap.invalidateSize();
-    renderDetailMap(d.points);
+    renderDetailMap(d.points, pins);
   }, 50);
 }
 
@@ -456,6 +577,7 @@ async function stopTracking(save) {
       distance: dist,
       duration,
       points: state.path,
+      pins: state.pins,
     };
     try {
       await api.save(drive);
