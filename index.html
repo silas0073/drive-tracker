@@ -152,7 +152,7 @@
 
   .fullscreen-overlay { position: fixed; inset: 0; z-index: 3000; background: var(--asphalt); }
   .fullscreen-overlay.hidden { display: none; }
-  .fs-map-slot { position: absolute; inset: 0; }
+  .fs-map-slot { position: absolute; inset: 0; z-index: 1; }
   .fs-map-slot .mappanel { width: 100%; height: 100%; border-radius: 0; border: none; margin: 0; }
   .fs-topbar {
     position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center;
@@ -313,15 +313,19 @@
       <span class="dot" style="background:var(--amber);width:8px;height:8px"></span>
     </div>
   </div>
-  <div class="fs-bottombar" id="fsBottomSlot"></div>
+  <div class="fs-bottombar" id="fsBottomSlot">
+    <button class="fs-iconbtn hidden" id="fsPinBtn" title="Drop a pin" style="background:var(--amber);color:var(--asphalt);border-color:var(--amber)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+    </button>
+  </div>
 </div>
 
 <div id="versionTag" class="mono" style="text-align:center;color:var(--muted);font-size:10px;letter-spacing:0.1em;padding:16px 0 32px;opacity:0.55"></div>
 
 <script>
 // ---------- helpers ----------
-const APP_VERSION = 'v1.6.0';
-const BUILD_TIME = '2026-07-22 08:10';
+const APP_VERSION = 'v1.6.1';
+const BUILD_TIME = '2026-07-22 08:35';
 document.getElementById('versionTag').textContent = `DRIVE TRACKER ${APP_VERSION} · built ${BUILD_TIME}`;
 
 const haversine = (a, b) => {
@@ -588,6 +592,8 @@ function enterFullscreen() {
   document.getElementById('fsMapSlot').appendChild(mapPanel);
   document.getElementById('fsBottomSlot').appendChild(ctrlBtn);
   document.getElementById('expandBtn').classList.add('hidden');
+  document.getElementById('pinBtn').style.display = 'none';
+  document.getElementById('livePill').style.display = 'none';
   document.getElementById('fullscreenOverlay').classList.remove('hidden');
   document.getElementById('mainView').classList.add('hidden');
   setTimeout(() => mainMap.invalidateSize(), 60);
@@ -598,12 +604,15 @@ function exitFullscreen() {
   document.getElementById('mapPanelHome').appendChild(mapPanel);
   document.getElementById('ctrlBtnHome').appendChild(ctrlBtn);
   document.getElementById('expandBtn').classList.remove('hidden');
+  document.getElementById('pinBtn').style.display = '';
+  document.getElementById('livePill').style.display = state.tracking ? 'flex' : 'none';
   document.getElementById('fullscreenOverlay').classList.add('hidden');
   document.getElementById('mainView').classList.remove('hidden');
   setTimeout(() => mainMap.invalidateSize(), 60);
 }
 document.getElementById('expandBtn').onclick = enterFullscreen;
 document.getElementById('fsMinimizeBtn').onclick = exitFullscreen;
+document.getElementById('fsPinBtn').onclick = openPinModal;
 
 function renderLogList() {
   document.getElementById('logCount').textContent = state.drives.length;
@@ -629,6 +638,7 @@ function updateCtrlBtn() {
     ? `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect></svg> END &amp; SAVE DRIVE`
     : `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> START TRACKING`;
   document.getElementById('pinBtn').classList.toggle('hidden', !state.tracking);
+  document.getElementById('fsPinBtn').classList.toggle('hidden', !state.tracking);
 }
 
 // ---------- pin drop ----------
