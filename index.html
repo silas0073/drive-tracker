@@ -174,6 +174,31 @@
   }
   .fs-bottombar .ctrlbtn { margin-bottom: 0; flex: 1; }
   .expandbtn { position: absolute; top: 12px; left: 12px; z-index: 1000; width: 36px; height: 36px; }
+
+  .searchrow { display: flex; gap: 8px; margin-bottom: 16px; }
+  .searchinput {
+    flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--paper); font-family: 'Inter', sans-serif; font-size: 16px; padding: 12px;
+  }
+  .searchinput:focus { outline: none; border-color: var(--amber); }
+  .searchinput::placeholder { color: var(--muted); }
+  .gobtn {
+    background: var(--amber); color: var(--asphalt); border: none; border-radius: 8px;
+    padding: 0 18px; font-family: 'JetBrains Mono', monospace; font-size: 13px; letter-spacing: 0.1em;
+  }
+  .gobtn:disabled { opacity: 0.5; }
+  .turnlist { margin-top: 16px; }
+  .turnrow {
+    display: flex; align-items: flex-start; gap: 12px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
+  }
+  .turnrow .num {
+    width: 22px; height: 22px; min-width: 22px; border-radius: 50%; background: var(--asphalt);
+    color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    display: flex; align-items: center; justify-content: center; margin-top: 1px;
+  }
+  .turnrow .instr { font-size: 14px; line-height: 1.4; }
+  .turnrow .dist { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -184,9 +209,15 @@
     <div class="eyebrow">TRIP COMPUTER</div>
     <div class="status" id="statusPill"><span class="dot" style="background:#5a5d68"></span><span class="mono" style="font-size:10px;letter-spacing:0.15em;color:#5a5d68">STANDBY</span></div>
   </div>
-  <div class="rowbtw" style="margin-bottom:24px">
+  <div class="rowbtw" style="margin-bottom:16px">
     <h1 class="display" style="margin:4px 0 0">DRIVE TRACKER</h1>
-    <button class="headerbtn" id="coverageBtn">
+  </div>
+  <div class="rowbtw" style="margin-bottom:24px;gap:8px">
+    <button class="headerbtn" id="directionsBtn" style="flex:1;justify-content:center">
+      <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+      DIRECTIONS
+    </button>
+    <button class="headerbtn" id="coverageBtn" style="flex:1;justify-content:center">
       <svg class="icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
       COVERAGE
     </button>
@@ -297,6 +328,35 @@
   <div class="emptylog" style="font-size:12px">Every past route is drawn in green, overlapping streets get darker. Amber pins mark spots you flagged. Empty patches are streets you haven't covered yet.</div>
 </div>
 
+<!-- ===== DIRECTIONS VIEW ===== -->
+<div id="directionsView" class="wrap hidden">
+  <button class="backbtn" id="directionsBackBtn">
+    <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    Trip log
+  </button>
+  <div class="eyebrow">ROUTE FROM HERE</div>
+  <h1 class="display">DIRECTIONS</h1>
+
+  <div class="searchrow">
+    <input id="destInput" class="searchinput" placeholder="Where to? (e.g. street, suburb)" />
+    <button class="gobtn" id="goBtn">GO</button>
+  </div>
+
+  <div id="dirErrorBox" class="errbox hidden"></div>
+
+  <div class="coverage-stats hidden" id="dirStatsRow">
+    <div class="stat"><div class="lbl"><span>DISTANCE</span></div><div class="val display" id="dirDistance">—</div></div>
+    <div class="stat"><div class="lbl"><span>ETA</span></div><div class="val display" id="dirEta">—</div></div>
+  </div>
+
+  <div class="mappanel tall" id="directionsMapPanel">
+    <div id="directionsMap" style="width:100%;height:100%"></div>
+    <div class="empty" id="dirMapEmpty">SEARCH A DESTINATION</div>
+  </div>
+
+  <div class="turnlist hidden" id="turnList"></div>
+</div>
+
 <!-- ===== FULLSCREEN DRIVE VIEW ===== -->
 <div id="fullscreenOverlay" class="fullscreen-overlay hidden">
   <div id="fsMapSlot" class="fs-map-slot"></div>
@@ -324,8 +384,8 @@
 
 <script>
 // ---------- helpers ----------
-const APP_VERSION = 'v1.6.2';
-const BUILD_TIME = '2026-07-22 08:48';
+const APP_VERSION = 'v1.7.0';
+const BUILD_TIME = '2026-07-22 09:20';
 document.getElementById('versionTag').textContent = `DRIVE TRACKER ${APP_VERSION} · built ${BUILD_TIME}`;
 
 const haversine = (a, b) => {
@@ -545,6 +605,147 @@ document.getElementById('coverageBackBtn').onclick = () => {
   document.getElementById('mainView').classList.remove('hidden');
   setTimeout(() => mainMap.invalidateSize(), 50);
 };
+
+// ---------- Directions (OSRM + Nominatim, both free/no-key) ----------
+let directionsMap = null;
+let directionsLayerGroup = null;
+
+function ensureDirectionsMap() {
+  if (directionsMap) return;
+  directionsMap = L.map('directionsMap', { zoomControl: true, attributionControl: true }).setView([-33.8688, 151.2093], 12);
+  L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom: 19 }).addTo(directionsMap);
+  directionsLayerGroup = L.layerGroup().addTo(directionsMap);
+}
+
+function openDirections() {
+  document.getElementById('mainView').classList.add('hidden');
+  document.getElementById('directionsView').classList.remove('hidden');
+  setTimeout(() => {
+    ensureDirectionsMap();
+    directionsMap.invalidateSize();
+  }, 50);
+}
+document.getElementById('directionsBtn').onclick = openDirections;
+document.getElementById('directionsBackBtn').onclick = () => {
+  document.getElementById('directionsView').classList.add('hidden');
+  document.getElementById('mainView').classList.remove('hidden');
+  setTimeout(() => mainMap.invalidateSize(), 50);
+};
+
+function getCurrentPositionPromise() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('Geolocation not available')); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
+}
+
+async function geocodeDestination(query) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error('Geocoding failed');
+  const data = await res.json();
+  if (!data || data.length === 0) throw new Error('No matching place found');
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), name: data[0].display_name };
+}
+
+async function fetchRoute(origin, dest) {
+  const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${dest.lng},${dest.lat}?overview=full&geometries=geojson&steps=true`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Routing failed');
+  const data = await res.json();
+  if (!data.routes || data.routes.length === 0) throw new Error('No route found');
+  return data.routes[0];
+}
+
+function maneuverText(step) {
+  const m = step.maneuver || {};
+  const name = step.name && step.name.trim() ? step.name : 'the road';
+  const mod = m.modifier || '';
+  switch (m.type) {
+    case 'depart': return `Head ${mod ? mod + ' ' : ''}on ${name}`;
+    case 'arrive': return m.modifier === 'left' || m.modifier === 'right' ? `Arrive at destination, on your ${mod}` : 'Arrive at destination';
+    case 'roundabout':
+    case 'rotary': return `At the roundabout, take the exit onto ${name}`;
+    case 'merge': return `Merge onto ${name}`;
+    case 'fork': return `Keep ${mod || 'straight'} onto ${name}`;
+    case 'continue': return `Continue ${mod ? mod + ' ' : ''}onto ${name}`;
+    case 'turn':
+    default:
+      if (!mod) return `Continue onto ${name}`;
+      return `Turn ${mod} onto ${name}`;
+  }
+}
+
+function showDirError(msg) {
+  const box = document.getElementById('dirErrorBox');
+  box.classList.remove('hidden');
+  box.innerHTML = `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg><span>${esc(msg)}</span>`;
+}
+function clearDirError() {
+  document.getElementById('dirErrorBox').classList.add('hidden');
+}
+
+function renderDirections(route, origin, dest) {
+  ensureDirectionsMap();
+  directionsLayerGroup.clearLayers();
+
+  const latlngs = route.geometry.coordinates.map(c => [c[1], c[0]]);
+  const poly = L.polyline(latlngs, { color: '#4a90d9', weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round' });
+  directionsLayerGroup.addLayer(poly);
+  directionsLayerGroup.addLayer(L.marker([origin.lat, origin.lng], { icon: amberDot('#EDEAE2', 12) }));
+  directionsLayerGroup.addLayer(L.marker([dest.lat, dest.lng], { icon: pinIcon('#4a90d9') }));
+  directionsMap.fitBounds(poly.getBounds(), { padding: [30, 30] });
+  document.getElementById('dirMapEmpty').classList.add('hidden');
+
+  document.getElementById('dirStatsRow').classList.remove('hidden');
+  document.getElementById('dirDistance').textContent = fmtDist(route.distance);
+  const etaMin = Math.round(route.duration / 60);
+  document.getElementById('dirEta').textContent = etaMin < 1 ? '<1 min' : `${etaMin} min`;
+
+  const steps = (route.legs && route.legs[0] && route.legs[0].steps) || [];
+  const listEl = document.getElementById('turnList');
+  listEl.classList.remove('hidden');
+  listEl.innerHTML = steps.map((s, i) => `
+    <div class="turnrow">
+      <div class="num">${i + 1}</div>
+      <div>
+        <div class="instr">${esc(maneuverText(s))}</div>
+        <div class="dist">${fmtDist(s.distance)}</div>
+      </div>
+    </div>`).join('');
+}
+
+async function handleGetDirections() {
+  const query = document.getElementById('destInput').value.trim();
+  if (!query) return;
+  clearDirError();
+  const goBtn = document.getElementById('goBtn');
+  goBtn.disabled = true;
+  goBtn.textContent = '…';
+  try {
+    const [origin, dest] = await Promise.all([
+      getCurrentPositionPromise(),
+      geocodeDestination(query),
+    ]);
+    const route = await fetchRoute(origin, dest);
+    renderDirections(route, origin, dest);
+  } catch (e) {
+    showDirError(
+      e && e.code === 1
+        ? 'Location permission denied — allow location access to get directions.'
+        : (e && e.message) || "Couldn't get directions — check the destination and your connection."
+    );
+  } finally {
+    goBtn.disabled = false;
+    goBtn.textContent = 'GO';
+  }
+}
+document.getElementById('goBtn').onclick = handleGetDirections;
+document.getElementById('destInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') handleGetDirections(); });
 
 // ---------- status / stats ----------
 function setStatus(s) {
